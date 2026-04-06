@@ -99,7 +99,7 @@ Execute the implementation:
    Determine merge target: use `target_branch` from settings if set and non-empty, otherwise use `starting_branch` from Step 0.
    ```
    git checkout {merge_target}
-   git merge {branch_name} --no-ff
+   git merge {branch_name} --no-ff --no-edit
    git push origin {merge_target}
    ```
    Store `agent_merged = true`. If merge conflicts arise, go to Step 6 (Failure) with conflict details — leave the feature branch pushed so it can be resolved manually.
