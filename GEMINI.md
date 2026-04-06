@@ -14,6 +14,34 @@ All tools are called via the `devspec` MCP server configured in `gemini-extensio
 
 ---
 
+### get_project_summary
+
+Get project settings including autopilot configuration. Call this at startup to determine push/merge behavior.
+
+**Parameters**: None (uses token-scoped project)
+
+**Response** (relevant fields):
+```json
+{
+  "local_plugin_settings": {
+    "auto_push": true,
+    "auto_merge": true,
+    "target_branch": "staging",
+    "branch_prefix": "work/action-item-",
+    "custom_instructions": "..."
+  }
+}
+```
+
+**Key settings**:
+- `auto_push`: Whether to push feature branches to remote
+- `auto_merge`: Whether to merge feature branches into target_branch after push
+- `target_branch`: Branch to merge into (e.g., "staging", "main")
+- `branch_prefix`: Prefix for feature branches (e.g., "work/action-item-")
+- `custom_instructions`: Additional instructions to follow during processing
+
+---
+
 ### get_next_work_item
 
 Fetch the next highest-priority queued action item with full context.

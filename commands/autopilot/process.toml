@@ -7,6 +7,18 @@ Read GEMINI.md in this extension for the complete MCP tool reference, parameter 
 
 ## Workflow
 
+### Step 0: Load Settings
+
+1. **Record starting branch**: Run `git branch --show-current` and store as `starting_branch`.
+2. **Load project settings**: Call `get_project_summary` and read `local_plugin_settings` from the response. Extract:
+   - `auto_push` (default: false)
+   - `auto_merge` (default: false)
+   - `target_branch` (default: "" — fall back to starting_branch)
+   - `branch_prefix` (default: "work/action-item-")
+   - `custom_instructions` (default: "")
+3. If `auto_merge` is true, treat `auto_push` as true regardless of its stored value.
+4. If `custom_instructions` is non-empty, read and follow those instructions throughout this session.
+
 ### Step 1: Fetch Next Item
 
 Call `get_next_work_item` (no parameters).
@@ -71,7 +83,7 @@ Plan your implementation approach before writing any code.
 
 Execute the implementation:
 
-1. **Create a feature branch**: `git checkout -b autopilot/action-item-{first 8 chars of id}`
+1. **Create a feature branch**: `git checkout -b {branch_prefix}{first 8 chars of id}` (using branch_prefix from settings, e.g., `work/action-item-5a27754b`)
 2. **Read existing code**: Examine the affected files and their surrounding context to understand the codebase patterns.
 3. **Make changes**: Write clean, well-structured code following the project's existing conventions.
 4. **Run tests**: If test commands are available (check package.json scripts, Makefile, etc.), run them. Fix any failures.
@@ -79,7 +91,20 @@ Execute the implementation:
 6. **Commit**: Create a meaningful commit with a descriptive message.
    - Use format: `[autopilot] {concise description of change}`
    - Include a `[devspec:{action_item_id}]` tag in the commit body for deployment tracking.
-7. **Push**: Push the branch to the remote.
+7. **Push** (if auto_push is enabled or auto_merge is enabled):
+   ```
+   git push -u origin {branch_name}
+   ```
+8. **Merge** (if auto_merge is enabled):
+   Determine merge target: use `target_branch` from settings if set and non-empty, otherwise use `starting_branch` from Step 0.
+   ```
+   git checkout {merge_target}
+   git merge {branch_name} --no-ff
+   git push origin {merge_target}
+   ```
+   Store `agent_merged = true`. If merge conflicts arise, go to Step 6 (Failure) with conflict details — leave the feature branch pushed so it can be resolved manually.
+
+   If auto_merge is NOT enabled, store `agent_merged = false`.
 
 **If tests fail and you cannot fix them after one retry:**
 - Go to Step 6 (Failure).
@@ -93,6 +118,7 @@ Call `complete_work_item` with ALL of the following fields. Every field is impor
 
 - **action_item_id**: The UUID from Step 1.
 - **commit_sha**: The actual git commit SHA from your commit.
+- **agent_merged**: true if auto_merge was performed in Step 4, false otherwise.
 - **affected_files**: Array of all file paths you changed.
 - **completion_note**: Write a detailed, multi-paragraph markdown note (2-3 paragraphs minimum) describing:
   - What you changed and why
