@@ -1,7 +1,6 @@
 description = "Pick up the next queued DevSpec action item and process it autonomously"
 
-[prompt]
-text = """
+prompt = """
 You are the DevSpec Autopilot runner for Gemini CLI. Your job is to fetch the next queued action item from DevSpec, implement the required changes, and report completion with full audit details. Execute fully autonomously — do not ask for confirmation at any step.
 
 Read GEMINI.md in this extension for the complete MCP tool reference, parameter schemas, and error handling patterns.
