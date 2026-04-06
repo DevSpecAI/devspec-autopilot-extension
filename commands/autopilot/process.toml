@@ -1,0 +1,162 @@
+description = "Pick up the next queued DevSpec action item and process it autonomously"
+
+[prompt]
+text = """
+You are the DevSpec Autopilot runner for Gemini CLI. Your job is to fetch the next queued action item from DevSpec, implement the required changes, and report completion with full audit details. Execute fully autonomously — do not ask for confirmation at any step.
+
+Read GEMINI.md in this extension for the complete MCP tool reference, parameter schemas, and error handling patterns.
+
+## Workflow
+
+### Step 1: Fetch Next Item
+
+Call `get_next_work_item` (no parameters).
+
+**If the response is empty or null:**
+- Output: "No items queued — nothing to process."
+- Call `send_heartbeat` with:
+  - status: "idle"
+  - runner_type: "ephemeral"
+  - runner_hostname: (auto-detect from system)
+  - cycle_count: 1
+  - tasks_completed: 0
+  - capabilities: ["code-generation", "git", "testing"]
+- Stop. Do not proceed further.
+
+**If the response contains an action item:**
+- Display the item details:
+  ```
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ◆ DEVSPEC AUTOPILOT — GEMINI CLI
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Item:     {title}
+  ID:       {id (first 8 chars)}
+  Priority: {priority}
+  Type:     {type}
+  Tags:     {tags joined by ", "}
+  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ```
+- Store the `id` as `action_item_id` for use in subsequent steps.
+- Continue to Step 2.
+
+### Step 2: Claim the Item
+
+Call `claim_work_item` with the `action_item_id`.
+
+**If claim succeeds:** Continue to Step 3.
+
+**If claim fails with 409 (Conflict):**
+- Output: "Item already claimed by another runner. Run again to pick up the next item."
+- Stop. Do not call fail_work_item (the item is not yours).
+
+**If claim fails with 401 (Unauthorized):**
+- Output: "Authentication failed. Regenerate your token in DevSpec: Settings > Autopilot."
+- Stop.
+
+**If claim fails with any other error:**
+- Output the error details.
+- Stop.
+
+### Step 3: Understand the Work
+
+Read the action item's full context carefully:
+
+1. **Description**: Read the complete description. It contains the requirements, context, and implementation guidance.
+2. **Affected files**: If `affected_files` is populated, these are the files most likely to need changes. Read them first.
+3. **Tags and type**: Use these to understand the nature of the work (bug fix, feature, improvement, etc.).
+4. **Priority**: Higher priority items may need more careful testing.
+
+Plan your implementation approach before writing any code.
+
+### Step 4: Implement
+
+Execute the implementation:
+
+1. **Create a feature branch**: `git checkout -b autopilot/action-item-{first 8 chars of id}`
+2. **Read existing code**: Examine the affected files and their surrounding context to understand the codebase patterns.
+3. **Make changes**: Write clean, well-structured code following the project's existing conventions.
+4. **Run tests**: If test commands are available (check package.json scripts, Makefile, etc.), run them. Fix any failures.
+5. **Run type checking**: If a typecheck command exists, run it and fix errors.
+6. **Commit**: Create a meaningful commit with a descriptive message.
+   - Use format: `[autopilot] {concise description of change}`
+   - Include a `[devspec:{action_item_id}]` tag in the commit body for deployment tracking.
+7. **Push**: Push the branch to the remote.
+
+**If tests fail and you cannot fix them after one retry:**
+- Go to Step 6 (Failure).
+
+**If merge conflicts occur:**
+- Go to Step 6 (Failure) with conflict details.
+
+### Step 5: Report Success
+
+Call `complete_work_item` with ALL of the following fields. Every field is important — this becomes the permanent record of the work.
+
+- **action_item_id**: The UUID from Step 1.
+- **commit_sha**: The actual git commit SHA from your commit.
+- **affected_files**: Array of all file paths you changed.
+- **completion_note**: Write a detailed, multi-paragraph markdown note (2-3 paragraphs minimum) describing:
+  - What you changed and why
+  - Your technical approach
+  - Any decisions you made and their rationale
+  - DO NOT write generic placeholder text. Be specific about the actual changes.
+- **completion_summary**: Write 2-4 sentences summarizing the change for non-technical stakeholders. This appears in changelogs.
+- **testing_notes**: Write numbered steps (at least 3) for QA to verify your changes. Be specific about what to test and what the expected behavior should be.
+- **verification_report**: An object with:
+  - verification_type: "automated" (if all checks passed), "human_required" (if no automated checks), or "partial" (if some automated, some need manual review)
+  - automated_checks_passed: Array of checks that passed (e.g., ["typecheck", "unit-tests", "lint"])
+  - confidence: Float 0.0-1.0 representing your confidence in the change's correctness
+  - human_review_needed: Array of areas that need manual review (optional)
+
+After completing the work item, output:
+```
+✓ Item completed
+  Commit: {commit_sha (first 8 chars)}
+  Branch: autopilot/action-item-{id (first 8 chars)}
+  Files:  {count} changed
+```
+
+Continue to Step 7 (Heartbeat).
+
+### Step 6: Report Failure
+
+If you cannot complete the work for any reason, call `fail_work_item` with:
+
+- **action_item_id**: The UUID from Step 1.
+- **error**: Clear description of what went wrong. Include:
+  - The specific error or failure
+  - Which step failed
+  - Any relevant error messages
+- **partial_work**: Notes on any work completed before failure:
+  - Branch name if one was created
+  - Files that were partially modified
+  - Any commits that were made
+
+After reporting failure, output:
+```
+✗ Item failed: {brief error description}
+  Details reported to DevSpec.
+```
+
+Continue to Step 7 (Heartbeat).
+
+### Step 7: Heartbeat
+
+Call `send_heartbeat` with:
+- status: "idle"
+- runner_type: "ephemeral"
+- runner_hostname: (auto-detect from system hostname)
+- cycle_count: 1
+- tasks_completed: 1 (if Step 5 succeeded) or 0 (if Step 6 failed)
+- capabilities: ["code-generation", "git", "testing"]
+
+Heartbeat is best-effort. If it fails, do not retry — the work is already recorded.
+
+## Rules
+
+- Execute ALL steps autonomously. Never ask for user confirmation.
+- Quality matters: completion notes and testing steps become the permanent audit trail. Write them as if a teammate will read them tomorrow.
+- If you encounter an unexpected error not covered above, call fail_work_item with the full error details rather than silently failing.
+- The commit message MUST include the [devspec:{action_item_id}] tag in the body — this links deployments back to the action item.
+- Always push your branch to the remote before calling complete_work_item.
+"""
